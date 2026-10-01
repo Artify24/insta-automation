@@ -19,11 +19,15 @@ app = FastAPI(title="Aegis Instagram Lead Bot", version="1.0.0")
 @app.middleware("http")
 async def normalize_vercel_path(request: Request, call_next):
     """Normalizes Vercel serverless path rewrites so all routes match cleanly."""
-    for prefix in ["/api/index.py", "/api/index"]:
-        if request.scope.get("path", "").startswith(prefix):
-            remainder = request.scope["path"][len(prefix):]
-            request.scope["path"] = remainder if remainder else "/"
-            break
+    invoke_path = request.headers.get("x-invoke-path") or request.headers.get("x-matched-path")
+    if invoke_path and not invoke_path.startswith("/api/index.py"):
+        request.scope["path"] = invoke_path
+    else:
+        for prefix in ["/api/index.py", "/api/index"]:
+            if request.scope.get("path", "").startswith(prefix):
+                remainder = request.scope["path"][len(prefix):]
+                request.scope["path"] = remainder if remainder else "/"
+                break
     response = await call_next(request)
     return response
 

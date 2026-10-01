@@ -16,6 +16,17 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Aegis Instagram Lead Bot", version="1.0.0")
 
+@app.middleware("http")
+async def normalize_vercel_path(request: Request, call_next):
+    """Normalizes Vercel serverless path rewrites so all routes match cleanly."""
+    for prefix in ["/api/index.py", "/api/index"]:
+        if request.scope.get("path", "").startswith(prefix):
+            remainder = request.scope["path"][len(prefix):]
+            request.scope["path"] = remainder if remainder else "/"
+            break
+    response = await call_next(request)
+    return response
+
 # Meta Configuration
 VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "aegis_secure_verify_token_2026")
 APP_SECRET = os.getenv("META_APP_SECRET", "")
@@ -104,22 +115,28 @@ def generate_lead_response(incoming_text: str) -> str:
         )
 
 @app.get("/")
-def home():
+@app.get("/api")
+@app.get("/api/index")
+def home(request: Request):
     return {
         "status": "online",
         "service": "Aegis Instagram Lead Bot",
         "version": "1.0.0",
-        "token_configured": bool(PAGE_ACCESS_TOKEN)
+        "token_configured": bool(PAGE_ACCESS_TOKEN),
+        "received_path": request.url.path
     }
 
 @app.get("/webhook")
+@app.get("/api/webhook")
+@app.get("/api/index/webhook")
 def meta_webhook_verify(
+    request: Request,
     hub_mode: Optional[str] = Query(None, alias="hub.mode"),
     hub_verify_token: Optional[str] = Query(None, alias="hub.verify_token"),
     hub_challenge: Optional[str] = Query(None, alias="hub.challenge"),
 ):
     """Handles the Meta Webhook handshake."""
-    logger.info(f"Handshake request: mode={hub_mode}, token={hub_verify_token}")
+    logger.info(f"Handshake request on {request.url.path}: mode={hub_mode}, token={hub_verify_token}")
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
         logger.info("Verification handshake succeeded!")
         return PlainTextResponse(content=hub_challenge, status_code=200)
@@ -128,6 +145,8 @@ def meta_webhook_verify(
     raise HTTPException(status_code=403, detail="Verification token mismatch")
 
 @app.post("/webhook")
+@app.post("/api/webhook")
+@app.post("/api/index/webhook")
 async def meta_webhook_receive(request: Request):
     """Processes incoming messages from Instagram leads."""
     raw_body = await request.body()

@@ -1,0 +1,175 @@
+{
+  "name": "Instagram Lead Bot & Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "instagram-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-get",
+      "name": "Meta Webhook Verification (GET)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        200
+      ],
+      "webhookId": "meta-verify"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-challenge",
+      "name": "Return Challenge Handshake",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        450,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "instagram-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-post",
+      "name": "Instagram Inbound DM (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        420
+      ],
+      "webhookId": "meta-messages"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "EVENT_RECEIVED",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-ack",
+      "name": "Acknowledge Meta 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        450,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract incoming message details from Meta payload\nconst body = $input.item.json.body || {};\nconst entries = body.entry || [];\nlet results = [];\n\nfor (const entry of entries) {\n  const messaging = entry.messaging || [];\n  for (const event of messaging) {\n    if (event.message && !event.message.is_echo) {\n      const senderId = event.sender?.id;\n      const text = event.message.text || '';\n\n      if (senderId && text) {\n        // Rule-based / Smart Lead Logic\n        const clean = text.toLowerCase().trim();\n        // Word-boundary match: substring checks misfire on 'this', 'which', '31', '12'\n        const has = (words) => new RegExp(`\\\\b(?:${words})\\\\b`).test(clean);\n        const isEmail = /[^\\s@]+@[^\\s@]+\\.[^\\s@]+/.test(text);\n        let reply = '';\n        let leadType = 'General Inquiry';\n\n        if (isEmail) {\n          reply = 'Thank you! We received your email. Our team will review your info and get in touch shortly!';\n          leadType = 'Captured Email';\n        } else if (has('hi|hello|hey|start|info')) {\n          reply = 'Hi there! Welcome to Bloom Craft! \\u{1F44B}\\n\\nWe help businesses scale with custom automation & growth tools.\\n\\nHow can we help today?\\n1. \\u{1F4BC} View our services\\n2. \\u{1F4C5} Book a 15-min discovery call\\n3. \\u{1F4AC} Talk to our team';\n        } else if (has('call|book|meeting|2')) {\n          reply = 'Awesome! Pick a convenient 15-min slot on our calendar:\\n\\u{1F449} https://calendly.com\\n\\nWhat is your best email address to send meeting notes to?';\n          leadType = 'Booking Request';\n        } else if (has('service|price|pricing|cost|1')) {\n          reply = 'We create tailored solutions based on your company stage! \\u{1F680}\\n\\nWhat industry is your company in, and what would you like to automate?';\n          leadType = 'Pricing Inquiry';\n        } else if (has('human|team|person|representative|rep|3')) {\n          reply = 'You got it! I have notified our team. A specialist will reply right here shortly.';\n          leadType = 'Human Handoff';\n        } else {\n          reply = `Thanks for reaching out! We received your message: \"${text}\".\\n\\nReply 1 to explore services, or 2 to book a call!`;\n        }\n\n        results.push({\n          sender_id: senderId,\n          message_id: event.message.mid || '',\n          incoming_message: text,\n          lead_type: leadType,\n          reply_message: reply,\n          access_token: $env.META_PAGE_ACCESS_TOKEN\n        });\n      }\n    }\n  }\n}\n\nreturn results;"
+      },
+      "id": "code-lead-logic",
+      "name": "Lead Qualification Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.instagram.com/v21.0/me/messages",
+        "sendQuery": false,
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "recipient",
+              "value": "={{ { id: $json.sender_id } }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ { text: $json.reply_message } }}"
+            }
+          ]
+        },
+        "options": {},
+        "jsCode": "// Extract incoming message details from Meta payload\nconst body = $input.item.json.body || {};\nconst entries = body.entry || [];\nlet results = [];\n\nfor (const entry of entries) {\n  const messaging = entry.messaging || [];\n  for (const event of messaging) {\n    if (event.message && !event.message.is_echo) {\n      const senderId = event.sender?.id;\n      const text = event.message.text || '';\n      \n      if (senderId && text) {\n        // Rule-based / Smart Lead Logic\n        const clean = text.toLowerCase().trim();\n        const has = (w) => new RegExp(`\\\\b${w}\\\\b`).test(clean);\n        let reply = '';\n        let leadType = 'General Inquiry';\n        \n        if (has('hi|hello|hey|start|info')) {\n          reply = 'Hi there! Welcome to Bloom Craft! 👋\\n\\nWe help businesses scale with custom automation & growth tools.\\n\\nHow can we help today?\\n1. 💼 View our services\\n2. 📅 Book a 15-min discovery call\\n3. 💬 Talk to our team';\n        } else if (has('call|book|meeting|2')) {\n          reply = 'Awesome! Pick a convenient 15-min slot on our calendar:\\n👉 https://calendly.com\\n\\nWhat is your best email address to send meeting notes to?';\n          leadType = 'Booking Request';\n        } else if (has('service|price|pricing|cost|1')) {\n          reply = 'We create tailored solutions based on your company stage! 🚀\\n\\nWhat industry is your company in, and what would you like to automate?';\n          leadType = 'Pricing Inquiry';\n        } else if (has('human|team|person|rep|3')) {\n          reply = 'Thank you! We received your email. Our team will review your info and get in touch shortly!';\n          leadType = 'Captured Email';\n        } else {\n          reply = `Thanks for reaching out! We received your message: \"${text}\".\\n\\nReply 1 to explore services, or 2 to book a call!`;\n        }\n        \n        results.push({\n          sender_id: senderId,\n          incoming_message: text,\n          lead_type: leadType,\n          reply_message: reply,\n          access_token: $env.META_PAGE_ACCESS_TOKEN\n        });\n      }\n    }\n  }\n}\n\nreturn results;",
+        "bodyContentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ recipient: { id: $json.sender_id }, message: { text: $json.reply_message } }) }}"
+      },
+      "id": "http-send-reply",
+      "name": "Send Reply to Instagram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        950,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Meta Webhook Verification (GET)": {
+      "main": [
+        [
+          {
+            "node": "Return Challenge Handshake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram Inbound DM (POST)": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Meta 200 OK",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Lead Qualification Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Qualification Logic": {
+      "main": [
+        [
+          {
+            "node": "Send Reply to Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

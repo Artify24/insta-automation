@@ -176,7 +176,7 @@ def home(request: Request):
     return {
         "status": "online",
         "service": "Aegis Instagram Lead Bot",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "token_configured": bool(PAGE_ACCESS_TOKEN),
         "received_path": request.url.path
     }
